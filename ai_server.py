@@ -1,10 +1,11 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import os
 from openai import OpenAI
 
-client = OpenAI()  # uses OPENAI_API_KEY from env
+client = OpenAI()  # uses OPENAI_API_KEY
 
-STATE = {}  # per-player conversation memory (previous_response_id)
+STATE = {}  # player -> previous_response_id
 
 SYSTEM = (
     "You are Billy, a Roblox player in 2018.\n"
@@ -12,7 +13,7 @@ SYSTEM = (
     "- reply in ONE short message (3–12 words)\n"
     "- casual roblox chat, lowercase\n"
     "- no emojis\n"
-    "- never mention ai, openai, models, or years\n"
+    "- never mention ai/openai/models/years\n"
     "- if asked 'are you ai', say 'idk lol'\n"
     "- remember what you said earlier and stay consistent\n"
 )
@@ -42,14 +43,16 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             data = json.loads(body)
-        except:
+        except Exception:
             return self._send({"reply": "bad json"}, 400)
 
         player = str(data.get("player", "player"))[:40]
         msg = str(data.get("message", ""))[:400]
-        membership = str(data.get("membership", "None"))
-        distance = str(data.get("distance", ""))
+        membership = str(data.get("membership", "None"))[:40]
+        distance = str(data.get("distance", ""))[:10]
         look = data.get("look", {})
+        if not isinstance(look, dict):
+            look = {}
 
         prev_id = STATE.get(player)
 
@@ -61,8 +64,6 @@ class Handler(BaseHTTPRequestHandler):
             f"- look: {look}\n\n"
             f"player said: {msg}"
         )
-
-        print(f"[IN] {player}: {msg}")
 
         try:
             resp = client.responses.create(
@@ -77,14 +78,16 @@ class Handler(BaseHTTPRequestHandler):
             )
 
             STATE[player] = resp.id
-            reply = clamp(resp.output_text)
-
-            print(f"[OUT] {reply}")
-            return self._send({"reply": reply})
+            return self._send({"reply": clamp(resp.output_text)})
 
         except Exception as e:
+            # This keeps the server alive even if OpenAI errors
             print("[OPENAI ERROR]", repr(e))
-            return self._send({"reply": "idk (server error)"})
+            return self._send({"reply": "idk (openai error)"})
 
-print("AI server running on http://0.0.0.0:8080")
-HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+def run():
+    port = int(os.environ.get("PORT", "8080"))
+    print("AI server running on 0.0.0.0:%d" % port)
+    HTTPServer(("0.0.0.0", port), Handler).serve_forever()
+
+run()
