@@ -1,1 +1,1 @@
-web: python ai_server.py
+web: uvicorn ai_server:app --host 0.0.0.0 --port $PORT
